@@ -1,7 +1,7 @@
 from elasticsearch import Elasticsearch
 import pandas as pd
 from sklearn.model_selection import train_test_split
-from tensorflow.keras.models import Sequential
+from tensorflow.keras.models import Sequential, load_model
 from tensorflow.keras.layers import Dense
 
 # Étape 1 : Récupérer les données depuis Elasticsearch
@@ -37,7 +37,31 @@ history = model.fit(X_train, y_train, epochs=100, batch_size=32, validation_data
 loss, accuracy = model.evaluate(X_test, y_test)
 print(f"Loss: {loss}, Accuracy: {accuracy}")
 
-# Étape 7 : Faire des prédictions
-predictions = model.predict(X_test)
-predicted_labels = (predictions > 0.5).astype(int)
-print(predicted_labels)
+model.labels = labels  # Ajouter les labels à l'objet modèle
+
+# Étape 7 : Sauvegarder le modèle
+model.save('my_model.keras')
+print("Modèle sauvegardé avec succès sous le nom 'my_model.keras'.")
+
+# Étape 8 : Charger le modèle sauvegardé et faire des prédictions
+loaded_model = load_model('my_model.keras')
+
+labels = loaded_model.labels
+
+print(X_test.head())
+# Faire des prédictions avec le modèle chargé
+# Faire des prédictions avec le modèle chargé
+predictions = loaded_model.predict(X_test)
+
+# Conversion des prédictions en labels
+predicted_labels = []
+for i in range(len(predictions)):
+    predicted = []
+    for j in range(len(predictions[i])):
+        if predictions[i][j] > 0.5:  # Si la prédiction pour ce label est > 0.5
+            predicted.append(labels[j])  # Ajouter le nom du label
+    predicted_labels.append(predicted)
+
+# Affichage des résultats
+for i, label_set in enumerate(predicted_labels):
+    print(f"Prédictions pour l'exemple {i+1}: {label_set}")

@@ -4,10 +4,48 @@ services:
     image: wurstmeister/zookeeper
     ports:
       - "2181:2181"
+
   kafka:
     image: wurstmeister/kafka
     ports:
       - "9092:9092"
     environment:
-      KAFKA_ADVERTISED_HOST_NAME: localhost
+      KAFKA_ADVERTISED_HOST_NAME: kafka
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+
+  spark-master:
+    image: bitnami/spark:3.3.1
+    container_name: spark-master
+    environment:
+      - SPARK_MODE=master
+      - SPARK_MASTER_HOST=spark-master
+      - SPARK_MASTER_PORT=7077
+    ports:
+      - "8080:8080"
+      - "7077:7077"
+
+  spark-worker:
+    image: bitnami/spark:3.3.1
+    container_name: spark-worker
+    depends_on:
+      - spark-master
+    environment:
+      - SPARK_MODE=worker
+      - SPARK_MASTER=spark://spark-master:7077
+      - SPARK_WORKER_MEMORY=2g  # Spécifier la mémoire du worker
+      - SPARK_WORKER_CORES=2    # Spécifier le nombre de cœurs du worker
+    ports:
+      - "8081:8081"
+
+  python-app:
+    build:
+      context: .   # Chemin du contexte de construction (répertoire contenant le Dockerfile)
+      dockerfile: Dockerfile  # Nom du Dockerfile (optionnel si le nom est 'Dockerfile')
+    container_name: python-app
+    environment:
+      - SPARK_MASTER_URL=spark://spark-master:7077
+      - SPARK_PACKAGES=org.apache.spark:spark-sql-kafka-0-10_2.12:3.3.1
+      - PYSPARK_SUBMIT_ARGS=--packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.3.1 pyspark-shell
+    depends_on:
+      - spark-master
+      - spark-worke

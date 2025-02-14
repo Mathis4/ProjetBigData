@@ -1,4 +1,4 @@
-version: '3'
+
 services:
   zookeeper:
     image: wurstmeister/zookeeper
@@ -11,3 +11,34 @@ services:
     environment:
       KAFKA_ADVERTISED_HOST_NAME: localhost
       KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+
+  elasticsearch:
+    image: elasticsearch:8.15.3
+    ports:
+      - 9200:9200
+    environment:
+      discovery.type: 'single-node'
+      xpack.security.enabled: 'false'
+  kibana:
+    image: kibana:8.15.3
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    ports:
+      - 5601:5601
+  fastapi:
+    build:
+      context: .
+      dockerfile: Dockerfile_fastapi
+    container_name: fastapi_backend
+    ports:
+      - "8000:8000"
+  
+  gradio:
+    build:
+      context: .
+      dockerfile: Dockerfile_gradio
+    container_name: gradio_interface
+    ports:
+      - "7860:7860"
+    depends_on:
+      - fastapi

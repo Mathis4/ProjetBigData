@@ -5,7 +5,7 @@ from datetime import datetime
 from langdetect import detect, LangDetectException
 
 # Variables de configuration
-GITHUB_TOKEN = "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"  # Remplacez par votre token GitHub
+GITHUB_TOKEN = "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"  # Remplacez par votre token GitHub
 KAFKA_TOPIC = "github_repos"
 KAFKA_BOOTSTRAP_SERVERS = "kafka:9092"
 
@@ -59,10 +59,27 @@ def filter_repos_by_language(repos):
                 filtered_repos.append(repo)
     return filtered_repos
 
-# Fonction pour envoyer les noms des dépôts à Kafka
+# Fonction pour récupérer les langages de programmation d'un dépôt
+def get_languages(owner, repo_name):
+    languages_url = f"https://api.github.com/repos/{owner}/{repo_name}/languages"
+    headers = {
+        "Authorization": f"token {GITHUB_TOKEN}",
+        "Accept": "application/vnd.github.v3+json"
+    }
+    response = requests.get(languages_url, headers=headers)
+    if response.status_code == 200:
+        return list(response.json().keys())  # Liste des langages de programmation utilisés
+    else:
+        print(f"Erreur lors de la récupération des langages pour {owner}/{repo_name}")
+        return []
+
+# Fonction pour envoyer les dépôts à Kafka
 def send_to_kafka(repos):
     for repo in repos:
         try:
+            owner, repo_name = repo["full_name"].split("/")  # Extraire le propriétaire et le nom du dépôt
+            languages = get_languages(owner, repo_name)
+
             repo_data = {
                 "repo_name": repo["name"],
                 "full_name": repo["full_name"],
@@ -70,6 +87,7 @@ def send_to_kafka(repos):
                 "description": repo.get("description", ""),
                 "created_at": repo.get("created_at", ""),
                 "topics": repo.get("topics", []),
+                "languages": languages  # Ajouter les langages de programmation
             }
             producer.send(KAFKA_TOPIC, value=repo_data)
             print(f"Dépôt envoyé à Kafka : {repo['name']}")
@@ -81,7 +99,7 @@ def collect_and_send(year):
     print(f"Recherche des dépôts GitHub créés en {year}...")
 
     # Parcours de chaque mois de l'année
-    for month in range(1, 2):
+    for month in range(1, 2):  # 1 à 2 pour tester un seul mois, peut être étendu pour toute l'année
         print(f"Recherche des dépôts GitHub créés en {month}/{year}...")
         repos = search_github_repos(month, year)
         
@@ -94,7 +112,6 @@ def collect_and_send(year):
                 print(f"Aucun dépôt trouvé en anglais ou français pour {month}/{year}.")
         else:
             print(f"Aucun dépôt trouvé pour {month}/{year}.")
-
 
 if __name__ == "__main__":
     try:

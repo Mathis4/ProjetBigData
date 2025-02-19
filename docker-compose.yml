@@ -37,6 +37,32 @@ services:
     ports:
       - "8081:8081"
 
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.7.0
+    environment:
+      - discovery.type=single-node
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"  # Limite à 0.25 CPU
+          memory: "1g"  # Limite à 1 Go de RAM
+    ports:
+      - "9200:9200"
+      
+
+  kibana:
+    image: kibana:8.15.3
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+    deploy:
+      resources:
+        limits:
+          cpus: "0.25"  # Limite à 0.25 CPU
+          memory: "1g"  # Limite à 1 Go de RAM
+    ports:
+      - 5601:5601
+
   python-app:
     build:
       context: .   # Chemin du contexte de construction (répertoire contenant le Dockerfile)
@@ -45,7 +71,7 @@ services:
     environment:
       - SPARK_MASTER_URL=spark://spark-master:7077
       - SPARK_PACKAGES=org.apache.spark:spark-sql-kafka-0-10_2.12:3.3.1
-      - PYSPARK_SUBMIT_ARGS=--packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.3.1 pyspark-shell
+      - PYSPARK_SUBMIT_ARGS=--packages org.apache.spark:spark-sql-kafka-0-10_2.12:3.3.1,org.elasticsearch:elasticsearch-spark-30_2.12:8.7.0 pyspark-shell
     depends_on:
       - spark-master
       - spark-worker

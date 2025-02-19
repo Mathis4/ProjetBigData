@@ -91,5 +91,19 @@ query = repos_df.writeStream \
     .format("console") \
     .start()
 
+def write_to_es(batch_df, batch_id):
+    batch_df.write \
+        .format("org.elasticsearch.spark.sql") \
+        .option("es.nodes", "elasticsearch") \
+        .option("es.port", "9200") \
+        .option("es.resource", "github_repos/_doc") \
+        .mode("append") \
+        .save()
+
+# Remplacer l'écriture sur console par foreachBatch vers Elasticsearch
+es_query = repos_df.writeStream \
+    .foreachBatch(write_to_es) \
+    .start()
+
 # Attendre indéfiniment l'exécution du stream
 query.awaitTermination()

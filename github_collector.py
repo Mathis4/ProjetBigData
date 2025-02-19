@@ -5,7 +5,7 @@ from datetime import datetime
 from langdetect import detect, LangDetectException
 
 # Variables de configuration
-GITHUB_TOKEN = "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"  # Remplacez par votre token GitHub
+GITHUB_TOKEN = "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"  # Remplacez par votre token GitHub
 KAFKA_TOPIC = "github_repos"
 KAFKA_BOOTSTRAP_SERVERS = "kafka:9092"
 

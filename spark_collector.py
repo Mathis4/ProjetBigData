@@ -45,9 +45,6 @@ repos_df = repos_df.select(
     "repo.languages"
 )
 
-# Optionnel : Limiter à 20 dépôts (attention, limit() n'est pas toujours adapté pour le streaming)
-repos_df = repos_df.limit(20)
-
 # Variables globales pour le chargement paresseux du tokenizer et du modèle sur chaque worker
 global_tokenizer = None
 global_model = None
@@ -89,20 +86,26 @@ repos_df = repos_df.withColumn("languages_embedding", embedding_udf(col("languag
 query = repos_df.writeStream \
     .outputMode("append") \
     .format("console") \
+    .option("numRows", 20) \
     .start()
 
 def write_to_es(batch_df, batch_id):
+    print(f"Traitement du lot {batch_id} avec {batch_df.count()} lignes.")
     batch_df.write \
         .format("org.elasticsearch.spark.sql") \
         .option("es.nodes", "elasticsearch") \
         .option("es.port", "9200") \
-        .option("es.resource", "github_repos/_doc") \
+        .option("es.resource", "github_repos") \
+        .option("es.index.auto.create", "true") \
         .mode("append") \
         .save()
+
 
 # Remplacer l'écriture sur console par foreachBatch vers Elasticsearch
 es_query = repos_df.writeStream \
     .foreachBatch(write_to_es) \
+    .option("checkpointLocation", "/tmp/spark_checkpoint") \
+    .trigger(processingTime="1 minute") \
     .start()
 
 # Attendre indéfiniment l'exécution du stream

@@ -1,16 +1,16 @@
 import json
 import requests
 from kafka import KafkaProducer
-from datetime import datetime
-from langdetect import detect, LangDetectException
+from apscheduler.schedulers.background import BackgroundScheduler
+from datetime import datetime, timedelta
+from langdetect import detect
+import time
+import os
 
 # Variables de configuration
-GITHUB_TOKEN = "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"  # Remplacez par votre token GitHub
+GITHUB_TOKEN = ""  # Remplacez par votre token GitHub
 KAFKA_TOPIC = "github_repos"
 KAFKA_BOOTSTRAP_SERVERS = "kafka:9092"
-
-# Langues à filtrer (français et anglais)
-ALLOWED_LANGUAGES = ["en"]  # 'en' pour anglais, 'fr' pour français
 
 # Initialisation du producteur Kafka
 producer = KafkaProducer(
@@ -18,9 +18,13 @@ producer = KafkaProducer(
     value_serializer=lambda v: json.dumps(v).encode('utf-8')
 )
 
-# Fonction pour rechercher des dépôts GitHub créés dans un mois spécifique
-def search_github_repos(month, year):
-    query = f"created:{year}-{month:02d}-01..{year}-{month:02d}-30"
+# Fonction pour rechercher des dépôts GitHub
+def search_github_repos(since_date=None):
+    if since_date:
+        query = f"created:>{since_date}"
+    else:
+        query = "created:>2023-01-01"
+
     url = f"https://api.github.com/search/repositories?q={query}&sort=created&order=desc&per_page=100"
     headers = {
         "Authorization": f"token {GITHUB_TOKEN}",
@@ -30,34 +34,28 @@ def search_github_repos(month, year):
     repos = []
     while url:
         response = requests.get(url, headers=headers)
+        
+        if response.status_code == 403:
+            # Vérifier si c'est une erreur de quota
+            remaining_quota = response.headers.get('X-RateLimit-Remaining')
+            reset_time = response.headers.get('X-RateLimit-Reset')
+            if remaining_quota == "0":
+                reset_timestamp = int(reset_time)
+                reset_time = datetime.fromtimestamp(reset_timestamp)
+                print(f"Quota atteint. Réessayer après {reset_time}")
+                sleep_time = (reset_time - datetime.now()).total_seconds()
+                time.sleep(sleep_time)
+                continue  # Réessayer après le quota est réinitialisé
+
         if response.status_code == 200:
             data = response.json()
             repos.extend(data.get("items", []))
-            # Vérifiez s'il existe une page suivante
             url = response.links.get('next', {}).get('url', None)
         else:
             print(f"Erreur lors de la récupération des dépôts : {response.status_code}")
-            return []
+            break
 
     return repos
-
-# Fonction pour détecter la langue du texte
-def detect_language(text):
-    try:
-        return detect(text)
-    except LangDetectException:
-        return None
-
-# Fonction pour filtrer les dépôts selon la langue naturelle (français ou anglais)
-def filter_repos_by_language(repos):
-    filtered_repos = []
-    for repo in repos:
-        description = repo.get("description", "")
-        if description:  # Vérifier si la description n'est pas vide
-            lang = detect_language(description)
-            if lang in ALLOWED_LANGUAGES:
-                filtered_repos.append(repo)
-    return filtered_repos
 
 # Fonction pour récupérer les langages de programmation d'un dépôt
 def get_languages(owner, repo_name):
@@ -77,6 +75,16 @@ def get_languages(owner, repo_name):
 def send_to_kafka(repos):
     for repo in repos:
         try:
+            description = repo.get("description", "")
+            if description:
+                try:
+                    # Filtrer les descriptions en anglais
+                    detected_lang = detect(description)
+                    if detected_lang != 'en':
+                        continue  # Ignorer si la langue n'est pas l'anglais
+                except:
+                    continue  # Ignorer si la détection échoue
+
             owner, repo_name = repo["full_name"].split("/")  # Extraire le propriétaire et le nom du dépôt
             languages = get_languages(owner, repo_name)
 
@@ -84,7 +92,7 @@ def send_to_kafka(repos):
                 "repo_name": repo["name"],
                 "full_name": repo["full_name"],
                 "html_url": repo["html_url"],
-                "description": repo.get("description", ""),
+                "description": description,
                 "created_at": repo.get("created_at", ""),
                 "topics": repo.get("topics", []),
                 "languages": languages  # Ajouter les langages de programmation
@@ -95,28 +103,40 @@ def send_to_kafka(repos):
             print(f"Erreur lors de l'envoi du dépôt {repo['name']} à Kafka: {str(e)}")
 
 # Fonction principale pour récupérer et envoyer les dépôts
-def collect_and_send(year):
-    print(f"Recherche des dépôts GitHub créés en {year}...")
+def collect_and_send(since_date=None):
+    if since_date is None:
+        # Si since_date n'est pas fourni, on récupère les dépôts des dernières heures
+        since_date = (datetime.now() - timedelta(hours=1)).strftime('%Y-%m-%dT%H:%M:%S')  # Format date-heure précis
+    
+    print(f"Recherche des dépôts GitHub créés depuis {since_date}...")
+    repos = search_github_repos(since_date)
 
-    # Parcours de chaque mois de l'année
-    for month in range(1, 2):  # 1 à 2 pour tester un seul mois, peut être étendu pour toute l'année
-        print(f"Recherche des dépôts GitHub créés en {month}/{year}...")
-        repos = search_github_repos(month, year)
-        
-        if repos:
-            # Filtrer les dépôts par langue naturelle
-            filtered_repos = filter_repos_by_language(repos)
-            if filtered_repos:
-                send_to_kafka(filtered_repos)
-            else:
-                print(f"Aucun dépôt trouvé en anglais ou français pour {month}/{year}.")
-        else:
-            print(f"Aucun dépôt trouvé pour {month}/{year}.")
+    if repos:
+        send_to_kafka(repos)
+    else:
+        print(f"Aucun dépôt trouvé.")
+
+# Planification de l'exécution automatique avec APScheduler
+def start_scheduler():
+    scheduler = BackgroundScheduler()
+    # Planifie la collecte de données toutes les heures
+    scheduler.add_job(collect_and_send, 'interval', hours=1)
+    scheduler.start()
 
 if __name__ == "__main__":
     try:
-        # Exemple : récupérer les repos créés en 2024
-        collect_and_send(2024)
+        print("Récupération des dépôts du dernier mois pour l'exemple (ajustable).")
+        # Récupérer les dépôts du dernier mois
+        since_date = (datetime.now() - timedelta(days=30)).strftime('%Y-%m-%d')
+        collect_and_send(since_date=since_date)
+
+        # Démarrer le scheduler pour exécuter la tâche de collecte de données automatiquement toutes les heures
+        start_scheduler()
+        print("Scheduler démarré. Récupération des dépôts toutes les heures.")
+
+        # L'application continue de s'exécuter
+        while True:
+            pass  # Laisser le programme en cours d'exécution
     except KeyboardInterrupt:
         print("Arrêt du script.")
     finally:

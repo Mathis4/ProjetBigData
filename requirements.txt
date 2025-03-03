@@ -8,3 +8,4 @@ gradio
 uvicorn==0.34.0
 requests==2.32.2
 tensorflow
+mlflow

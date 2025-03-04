@@ -1,5 +1,6 @@
 docker-compose build
 docker-compose up -d
-docker-compose run --service-ports python-app bash
+docker exec -it python-app bash
 python3 github_collector.py
 python3 spark_collector.py
+docker exec -it train-part bash

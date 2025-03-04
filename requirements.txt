@@ -1,9 +1,0 @@
-requests==2.31.0
-six
-pyspark==3.3.1
-kafka-python
-sentence-transformers
-langdetect
-torch
-transformers
-tqdm

@@ -9,7 +9,7 @@ from langdetect import detect
 import time
 
 # Variables de configuration
-#GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")  # Remplacez par votre token GitHub
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")  # Remplacez par votre token GitHub
 KAFKA_TOPIC = "github_repos"
 KAFKA_BOOTSTRAP_SERVERS = "kafka:9092"
 

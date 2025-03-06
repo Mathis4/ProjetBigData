@@ -9,22 +9,6 @@ with open("github.png", "rb") as img_file:
     img_base64 = base64.b64encode(img_file.read()).decode("utf-8")
 img_data_uri = f"data:image/png;base64,{img_base64}"
 
-
-def get_github_topics(repo_url: str):
-    try:
-        response = requests.get(f"{API_BASE_URL}/github-topics/", params={"repo_url": repo_url})
-        if response.status_code == 200:
-            topics = response.json().get("topics", [])
-            if topics:
-                badges = " ".join([f'<span class="badge">{topic}</span>' for topic in topics])
-                return badges
-            else:
-                return '<span style="color: red;">❌ Aucun topic trouvé.</span>'
-        return f'<span style="color: red;">🚨 Erreur {response.status_code} : {response.text}</span>'
-    except requests.ConnectionError:
-        return '<span style="color: red;">⚠️ Impossible de se connecter au backend FastAPI.</span>'
-
-
 def suggest_topics(title: str, technologies: str, readme_content: str):
     payload = {
         "title": title,
@@ -113,26 +97,19 @@ with gr.Blocks(css=custom_css) as app:
       <div class="header">
         <img src="{img_data_uri}" alt="Bannière" style="width:100%; border-radius:10px;">
         <h1>🚀 Analyse de Projets GitHub</h1>
-        <p>Extraire et suggérer des topics grâce à l'intelligence artificielle</p>
+        <p>Suggérer des topics grâce à l'intelligence artificielle</p>
       </div>
     """)
 
     gr.Markdown("""
     <div style="text-align: center; font-size:1.1rem; line-height:1.6; margin-bottom: 1.5rem;">
       <strong>À propos de l'application :</strong><br>
-      Cette application vous permet de <em>détecter automatiquement</em> les topics d'un dépôt GitHub en utilisant l'API GitHub,<br>
-      puis de <em>proposer intelligemment</em> des topics en se basant sur les caractéristiques de votre projet.<br>
-      Utilisez les onglets ci-dessous pour explorer chacune des fonctionnalités.
+      Cette application vous permet de <em>obtenir des suggestions</em> de topics pour un dépôt GitHub<br>
+      en se basant sur les caractéristiques de votre projet.<br>
     </div>
     """)
 
     with gr.Tabs():
-        with gr.Tab("🔍 Extraire des Topics"):
-            with gr.Row():
-                repo_url_input = gr.Textbox(label="🔗 URL du projet GitHub", placeholder="Ex : octocat/Hello-World")
-                get_topics_button = gr.Button("Extraire", elem_classes=["button"])
-            output_topics = gr.HTML(label="📌 Topics extraits")
-            get_topics_button.click(get_github_topics, inputs=[repo_url_input], outputs=[output_topics])
 
         with gr.Tab("💡 Proposer des Topics"):
             with gr.Row():

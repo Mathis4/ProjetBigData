@@ -26,6 +26,7 @@ kafka_stream = spark.readStream \
     .option("kafka.bootstrap.servers", "kafka:9092") \
     .option("subscribe", "github_repos") \
     .option("startingOffsets", "earliest") \
+    .option("maxOffsetsPerTrigger", "20") \
     .load()
 
 # Décodage de la valeur JSON du message Kafka
@@ -45,51 +46,51 @@ repos_df = repos_df.select(
     "repo.languages"
 )
 
-# Variables globales pour le chargement paresseux du tokenizer et du modèle sur chaque worker
-global_tokenizer = None
-global_model = None
+def load_model():
+    """
+    Charge et renvoie le tokenizer et le modèle. Utilisé pour chaque worker afin de charger
+    les ressources locales.
+    """
+    tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")
+    model = AutoModel.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")
+    return tokenizer, model
 
-def generate_embedding_lazy(text):
+def generate_embedding(text, tokenizer, model):
     """
-    Fonction UDF pour générer des embeddings à partir d'un texte.
-    Le modèle et le tokenizer sont chargés paresseusement sur chaque worker.
+    Fonction pour générer des embeddings à partir d'un texte, en utilisant le tokenizer et le modèle
+    préalablement chargés.
     """
-    global global_tokenizer, global_model
-    if global_tokenizer is None or global_model is None:
-        # Charger le tokenizer et le modèle sur le worker (uniquement lors du premier appel)
-        global_tokenizer = AutoTokenizer.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")
-        global_model = AutoModel.from_pretrained("sentence-transformers/all-MiniLM-L6-v2")
     if text:
-        # Affichage de progression (ce print apparaîtra dans les logs de l'executor)
-        inputs = global_tokenizer(
-            text, 
-            return_tensors="pt", 
-            truncation=True, 
-            padding=True, 
+        inputs = tokenizer(
+            text,
+            return_tensors="pt",
+            truncation=True,
+            padding=True,
             max_length=128
         )
         with torch.no_grad():
-            embeddings = global_model(**inputs).last_hidden_state.mean(dim=1).squeeze().tolist()
+            embeddings = model(**inputs).last_hidden_state.mean(dim=1).squeeze().tolist()
         return embeddings
     return None
 
 # Définir l'UDF pour Spark en spécifiant le type de retour
-embedding_udf = udf(generate_embedding_lazy, ArrayType(FloatType()))
+def embedding_udf(text):
+    tokenizer, model = load_model()
+    return generate_embedding(text, tokenizer, model)
 
-# Ajouter des colonnes d'embeddings pour 'repo_name', 'description' et 'languages'
-repos_df = repos_df.withColumn("repo_name_embedding", embedding_udf(col("repo_name")))
-repos_df = repos_df.withColumn("description_embedding", embedding_udf(col("description")))
+# Appliquer l'UDF sur les colonnes 'repo_name', 'description', et 'languages'
+embedding_udf_spark = udf(embedding_udf, ArrayType(FloatType()))
+
+repos_df = repos_df.withColumn("repo_name_embedding", embedding_udf_spark(col("repo_name")))
+repos_df = repos_df.withColumn("description_embedding", embedding_udf_spark(col("description")))
+
 # Pour 'languages', convertir la liste en chaîne de caractères avant de générer l'embedding
-repos_df = repos_df.withColumn("languages_embedding", embedding_udf(col("languages").cast(StringType())))
-
-# # Afficher le contenu du DataFrame en mode streaming dans la console
-# query = repos_df.writeStream \
-#     .outputMode("append") \
-#     .format("console") \
-#     .option("numRows", 20) \
-#     .start()
+repos_df = repos_df.withColumn("languages_embedding", embedding_udf_spark(col("languages").cast(StringType())))
 
 def write_to_es(batch_df, batch_id):
+    """
+    Fonction pour écrire les résultats dans Elasticsearch.
+    """
     print(f"Traitement du lot {batch_id} avec {batch_df.count()} lignes.")
     batch_df.write \
         .format("org.elasticsearch.spark.sql") \
@@ -99,7 +100,6 @@ def write_to_es(batch_df, batch_id):
         .option("es.index.auto.create", "true") \
         .mode("append") \
         .save()
-
 
 # Remplacer l'écriture sur console par foreachBatch vers Elasticsearch
 es_query = repos_df.writeStream \

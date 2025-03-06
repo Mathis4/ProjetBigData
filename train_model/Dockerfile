@@ -9,4 +9,5 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copier le reste de l'application
 COPY . .
 
-CMD ["tail", "-f", "/dev/null"]
+# Définir le script Python comme point d'entrée
+CMD ["python", "topic_classification_model.py"]

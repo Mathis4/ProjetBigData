@@ -1,4 +1,6 @@
 import json
+import os
+
 import requests
 from kafka import KafkaProducer
 from apscheduler.schedulers.background import BackgroundScheduler
@@ -7,7 +9,7 @@ from langdetect import detect
 import time
 
 # Variables de configuration
-GITHUB_TOKEN = "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"  # Remplacez par votre token GitHub
+GITHUB_TOKEN = os.getenv("GITHUB_TOKEN")  # Remplacez par votre token GitHub
 KAFKA_TOPIC = "github_repos"
 KAFKA_BOOTSTRAP_SERVERS = "kafka:9092"
 
@@ -124,7 +126,7 @@ def collect_and_send(since_date=None):
 def start_scheduler():
     scheduler = BackgroundScheduler()
     # Planifie la collecte de données toutes les heures
-    scheduler.add_job(collect_and_send, 'interval', hours=1)
+    scheduler.add_job(collect_and_send, 'interval', minutes=int(os.getenv("GITHUB_DATA_INTERVAL")))
     scheduler.start()
 
 

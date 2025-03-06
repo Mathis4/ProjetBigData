@@ -1,0 +1,4 @@
+kafka-python
+langdetect
+apscheduler
+requests==2.31.0
